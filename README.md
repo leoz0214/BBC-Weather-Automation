@@ -6,4 +6,4 @@ Key Features to be implemented:
 - Store weather data for a given location at a given date/time
 - Store daily conditions data for a given location
 - Store weather warnings data
-- Generate a HTML summary an automate emails on the above data
+- Generate a HTML summary and send automated emails on the above data
