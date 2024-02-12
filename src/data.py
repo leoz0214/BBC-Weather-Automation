@@ -1,8 +1,8 @@
 """Module handling file/database input and output code."""
+import datetime as dt
 import json
 import pathlib
 import sqlite3
-from contextlib import suppress
 from dataclasses import dataclass
 
 
@@ -59,7 +59,7 @@ def create_missing_tables() -> None:
         cursor.execute(
             f"""
             CREATE TABLE IF NOT EXISTS {LOCATION_TABLE}(
-                location_id TEXT PRIMARY KEY,
+                location_id INTEGER PRIMARY KEY,
                 name TEXT, region TEXT,
                 latitude REAL, longitude REAL)""")
         # The Time table stores the weather information at fixed
@@ -67,13 +67,13 @@ def create_missing_tables() -> None:
         cursor.execute(
             f"""
             CREATE TABLE IF NOT EXISTS {TIME_TABLE}(
-                location_id TEXT, date_time DATETIME,
+                location_id INTEGER, timestamp TIMESTAMP,
                 temperature INTEGER, feels_like_temperature INTEGER,
                 wind_speed INTEGER, wind_direction TEXT,
                 humidity INTEGER, precipitation_odds INTEGER,
                 pressure INTEGER, visibility INTEGER,
                 weather_type INTEGER,
-                PRIMARY KEY(location_id, date_time),
+                PRIMARY KEY(location_id, timestamp),
                 FOREIGN KEY(location_id)
                     REFERENCES {LOCATION_TABLE}(location_id))""")
         # The Day table stores the general conditions information
@@ -81,10 +81,10 @@ def create_missing_tables() -> None:
         cursor.execute(
             f"""
             CREATE TABLE IF NOT EXISTS {DAY_TABLE}(
-                location_id TEXT, date DATE,
+                location_id INTEGER, date DATE,
                 max_temperature INTEGER, min_temperature INTEGER,
                 sunrise TIME, sunset TIME, uv INTEGER, pollution INTEGER,
-                weather_type INTEGER,
+                pollen INTEGER,
                 PRIMARY KEY(location_id, date),
                 FOREIGN KEY(location_id)
                     REFERENCES {LOCATION_TABLE}(location_id))""")
@@ -92,7 +92,7 @@ def create_missing_tables() -> None:
         cursor.execute(
             f"""
             CREATE TABLE IF NOT EXISTS {WARNING_TABLE}(
-                location_id TEXT, level INTEGER, weather_type TEXT,
+                location_id INTEGER, level INTEGER, weather_type TEXT,
                 issued DATETIME, start DATETIME, end DATETIME,
                 description TEXT,
                 PRIMARY KEY(location_id, weather_type, issued),
@@ -103,24 +103,50 @@ def create_missing_tables() -> None:
         cursor.execute(
             f"""
             CREATE TABLE IF NOT EXISTS {LAST_UPDATED_TABLE}(
-                location_id TEXT PRIMARY KEY, last_updated DATETIME,
+                location_id INTEGER PRIMARY KEY, last_updated DATETIME,
                 FOREIGN KEY(location_id)
                     REFERENCES {LOCATION_TABLE}(location_id))""")
         
 
-def insert(table: str, values: tuple) -> None:
-    """Inserts a given record into a table."""
+def insert_or_replace(table: str, values: tuple) -> None:
+    """
+    Inserts a given record into a table.
+    Replace if a record with the same primary key already exists.
+    """
     with Database() as cursor:
         cursor.execute(
-            f"INSERT INTO {table} VALUES({','.join('?' * len(values))})",
+            f"INSERT OR REPLACE INTO {table} "
+            f"VALUES({','.join('?' * len(values))})",
             values)
 
 
-def add_location_if_missing(location_info: dict) -> None:
-    """Adds location info to the locations table if needed."""
-    record = (
-        location_info["id"], location_info["name"], location_info["container"],
-        location_info["latitude"], location_info["longitude"])
-    # Ignore if location data already exists.
-    with suppress(sqlite3.IntegrityError):
-        insert(LOCATION_TABLE, record)
+def insert_or_replace_many(table: str, records: list[tuple]) -> None:
+    """
+    Inserts given records into a table.
+    Replace if a record with the same primary key already exists.
+    """
+    with Database() as cursor:
+        for values in records:
+            cursor.execute(
+                f"INSERT OR REPLACE INTO {table} "
+                f"VALUES({','.join('?' * len(values))})",
+                values)
+
+
+def last_updated_changed(location_id: str, last_updated: str) -> bool:
+    """
+    Returns True if the last updated date/time for a given location ID has
+    changed, also updates the last updated date/time if a change has indeed
+    occurred.
+    """
+    with Database() as cursor:
+        previous_last_updated = cursor.execute(
+            f"""
+            SELECT last_updated FROM {LAST_UPDATED_TABLE}
+            WHERE location_id=?""", (location_id,)).fetchone()
+    changed = (
+        previous_last_updated is None # First time.
+        or last_updated != previous_last_updated[0])
+    if changed:
+        insert_or_replace(LAST_UPDATED_TABLE, (location_id, last_updated))
+    return changed
