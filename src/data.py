@@ -3,18 +3,56 @@ import datetime as dt
 import json
 import pathlib
 import sqlite3
+import time
 from dataclasses import dataclass
+
+import get
 
 
 @dataclass
 class DownloadSettings:
     """Download location IDs and refresh rate."""
-    location_ids: list[str]
+    location_ids: list[int]
     refresh_seconds: int | float
+
+
+@dataclass
+class EmailInfo:
+    """Sender email, recipient email, location ID and times to send at."""
+    sender: str
+    recipient: str
+    location_id: int
+    times: list[dt.time]
+
+
+@dataclass
+class LocationInfo:
+    """Overall location details, including last updated date/time."""
+    name: str
+    region: str
+    latitude: float
+    longitude: float
+    last_updated: str | None
+
+
+@dataclass
+class WeatherInfo:
+    """Hourly weather information."""
+    date_time: dt.datetime
+    temperature: int
+    feels_like_temperature: int
+    wind_speed: int
+    wind_direction: str
+    humidity: int
+    precipitation_odds: int
+    pressure: int
+    visibility: get.Visibility
+    weather_type: get.WeatherType
 
 
 DATA_FOLDER = pathlib.Path(__file__).parent.parent / "data"
 DOWNLOAD_SETTINGS_FILE = DATA_FOLDER / "download.json"
+EMAIL_SETTINGS_FILE = DATA_FOLDER / "email.json"
 DATABASE = DATA_FOLDER / "database.db"
 # Database tables.
 LOCATION_TABLE = "locations"
@@ -51,6 +89,18 @@ def get_download_settings() -> DownloadSettings:
         json_data["location_ids"], json_data["refresh_seconds"])
 
 
+def get_email_infos() -> list[EmailInfo]:
+    """Returns information on all the emails to send."""
+    with EMAIL_SETTINGS_FILE.open("r", encoding="utf8") as f:
+        json_data = json.load(f)
+    return [
+        EmailInfo(
+            record["sender"], record["recipient"], record["location_id"],
+            [dt.time(*map(int, time_.split(":", maxsplit=1)))
+                for time_ in record["times"]]
+        ) for record in json_data]
+
+
 def create_missing_tables() -> None:
     """Creates all required tables if they do not already exist."""
     with Database() as cursor:
@@ -67,7 +117,8 @@ def create_missing_tables() -> None:
         cursor.execute(
             f"""
             CREATE TABLE IF NOT EXISTS {TIME_TABLE}(
-                location_id INTEGER, timestamp TIMESTAMP,
+                location_id INTEGER,
+                timestamp TIMESTAMP, time_zone_offset INTEGER,
                 temperature INTEGER, feels_like_temperature INTEGER,
                 wind_speed INTEGER, wind_direction TEXT,
                 humidity INTEGER, precipitation_odds INTEGER,
@@ -129,11 +180,10 @@ def insert_or_replace_many(table: str, records: list[tuple]) -> None:
         for values in records:
             cursor.execute(
                 f"INSERT OR REPLACE INTO {table} "
-                f"VALUES({','.join('?' * len(values))})",
-                values)
+                f"VALUES({','.join('?' * len(values))})", values)
 
 
-def last_updated_changed(location_id: str, last_updated: str) -> bool:
+def last_updated_changed(location_id: int, last_updated: str) -> bool:
     """
     Returns True if the last updated date/time for a given location ID has
     changed, also updates the last updated date/time if a change has indeed
@@ -150,3 +200,42 @@ def last_updated_changed(location_id: str, last_updated: str) -> bool:
     if changed:
         insert_or_replace(LAST_UPDATED_TABLE, (location_id, last_updated))
     return changed
+
+
+def get_location_info(location_id: int) -> LocationInfo:
+    """Returns the location information by location ID."""
+    with Database() as cursor:
+        name, region, latitude, longitude = cursor.execute(
+            f"""
+            SELECT name, region, latitude, longitude
+            FROM {LOCATION_TABLE} WHERE location_id=?""", (location_id,)
+        ).fetchone()
+        last_updated = cursor.execute(
+            f"""
+            SELECT last_updated FROM {LAST_UPDATED_TABLE}
+            WHERE location_id=?""", (location_id,)).fetchone()
+        if last_updated is not None:
+            last_updated = last_updated[0]
+    return LocationInfo(name, region, latitude, longitude, last_updated)
+
+
+def get_future_weather(location_id: int, hours: int) -> list[WeatherInfo]:
+    """Returns weather conditions for the next N hours, as available."""
+    current_timestamp = time.time()
+    with Database() as cursor:
+        records = cursor.execute(
+            f"""
+            SELECT timestamp, temperature, feels_like_temperature, wind_speed,
+                wind_direction, humidity, precipitation_odds, pressure,
+                visibility, weather_type FROM {TIME_TABLE}
+            WHERE location_id=? AND timestamp - time_zone_offset > ?
+            ORDER BY timestamp ASC LIMIT ?
+            """, (location_id, current_timestamp, hours)).fetchall()
+    weather_infos = [
+        WeatherInfo(
+            dt.datetime.utcfromtimestamp(record[0]), record[1], record[2],
+            record[3], record[4], record[5], record[6],
+            record[7] + get.PRESSURE_OFFSET, get.Visibility(record[8]),
+            get.WeatherType(record[9]))
+        for record in records]
+    return weather_infos

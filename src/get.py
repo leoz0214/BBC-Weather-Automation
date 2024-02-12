@@ -68,6 +68,25 @@ VISIBILITIES = {
     "Moderate": Visibility.moderate, "Good": Visibility.good,
     "Very Good": Visibility.very_good, "Excellent": Visibility.excellent
 }
+VISIBILITIES_REVERSED = {value: key for key, value in VISIBILITIES.items()}
+WEATHER_TYPES = {
+    WeatherType.clear_sky: "Clear Sky", WeatherType.sunny: "Sunshine",
+    WeatherType.partly_cloudy: "Partly Cloudy",
+    WeatherType.sunny_intervals: "Sunny Intervals",
+    WeatherType.mist: "Mist", WeatherType.fog: "Fog",
+    WeatherType.light_cloud: "Light Cloud",
+    WeatherType.thick_cloud: "Thick Cloud",
+    WeatherType.light_rain_showers: "Light Rain Showers",
+    WeatherType.drizzle: "Drizzle", WeatherType.light_rain: "Light Rain",
+    WeatherType.heavy_rain: "Heavy Rain",
+    WeatherType.sleet_showers: "Sleet Showers", WeatherType.sleet: "Sleet",
+    WeatherType.hail: "Hail", WeatherType.hail_showers: "Hail Showers",
+    WeatherType.light_snow_showers: "Light Snow Showers",
+    WeatherType.light_snow: "Light Snow",
+    WeatherType.heavy_snow_showers: "Heavy Snow Showers",
+    WeatherType.heavy_snow: "Heavy Snow",
+    WeatherType.thundery_showers: "Thundery Showers"
+}
 WARNING_LEVELS = {
     "Yellow": WarningLevel.yellow, "Amber": WarningLevel.amber,
     "Red": WarningLevel.red
@@ -87,10 +106,14 @@ def add_location_if_missing(location_info: dict) -> None:
     data.insert_or_replace(data.LOCATION_TABLE, record)
 
 
-def process_json_data(location_id: str, json_data: dict) -> None:
+def process_json_data(location_id: int, json_data: dict) -> None:
     """Inserts and updates weather/conditions records from the JSON data."""
     weather_time_records = []
     daily_conditions_records = []
+    time_zone_offset = dt.datetime.fromisoformat(
+        json_data["issueDate"]).utcoffset()
+    time_zone_offset_seconds = (
+        time_zone_offset.days * 86400 + time_zone_offset.seconds)
     for i, forecast in enumerate(json_data["forecasts"]):
         # Hourly data
         for report in forecast["detailed"]["reports"]:
@@ -101,7 +124,7 @@ def process_json_data(location_id: str, json_data: dict) -> None:
                 report["windSpeedMph"] if report["gustSpeedMph"] < GUSTS_MPH
                 else report["gustSpeedMph"]) 
             record = (
-                location_id, timestamp,
+                location_id, timestamp, time_zone_offset_seconds,
                 report["temperatureC"], report["feelsLikeTemperatureC"],
                 wind_speed, report["windDirection"],
                 report["humidity"],
@@ -150,7 +173,7 @@ def extract_warning_text_date(text: str) -> dt.datetime:
     return dt.datetime(year, month, day, hour, minute)
 
 
-def add_weather_warnings(location_id: str, soup: BeautifulSoup) -> None:
+def add_weather_warnings(location_id: int, soup: BeautifulSoup) -> None:
     """
     Searches the webpage for any weather warnings and inserts them
     into the database as required.
