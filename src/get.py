@@ -38,19 +38,28 @@ class WeatherType(enum.Enum):
     fog = 6
     light_cloud = 7
     thick_cloud = 8
+    light_rain_showers_night = 9
     light_rain_showers = 10
     drizzle = 11
     light_rain = 12
+    heavy_rain_showers_night = 13
+    heavy_rain_showers = 14
     heavy_rain = 15
+    sleet_showers_night = 16
     sleet_showers = 17
     sleet = 18
-    hail = 19
+    hail_showers_night = 19
     hail_showers = 20
+    hail = 21
+    light_snow_showers_night = 22
     light_snow_showers = 23
     light_snow = 24
-    heavy_snow_showers = 25
+    heavy_snow_showers_night = 25
+    heavy_snow_showers = 26
     heavy_snow = 27
-    thundery_showers = 28
+    thundery_showers_night = 28
+    thundery_showers = 29
+    thunder = 30
 
 
 class WarningLevel(enum.Enum):
@@ -76,16 +85,26 @@ WEATHER_TYPES = {
     WeatherType.mist: "Mist", WeatherType.fog: "Fog",
     WeatherType.light_cloud: "Light Cloud",
     WeatherType.thick_cloud: "Thick Cloud",
+    WeatherType.light_rain_showers_night: "Light Rain Showers",
     WeatherType.light_rain_showers: "Light Rain Showers",
     WeatherType.drizzle: "Drizzle", WeatherType.light_rain: "Light Rain",
+    WeatherType.heavy_rain_showers_night: "Heavy Rain Showers",
+    WeatherType.heavy_rain_showers: "Heavy Rain Showers",
     WeatherType.heavy_rain: "Heavy Rain",
+    WeatherType.sleet_showers_night: "Sleet Showers Night",
     WeatherType.sleet_showers: "Sleet Showers", WeatherType.sleet: "Sleet",
-    WeatherType.hail: "Hail", WeatherType.hail_showers: "Hail Showers",
+    WeatherType.hail_showers_night: "Hail Showers",
+    WeatherType.hail_showers: "Hail Showers",
+    WeatherType.hail: "Hail",
+    WeatherType.light_snow_showers_night: "Light Snow Showers",
     WeatherType.light_snow_showers: "Light Snow Showers",
     WeatherType.light_snow: "Light Snow",
+    WeatherType.heavy_snow_showers_night: "Heavy Snow Showers",
     WeatherType.heavy_snow_showers: "Heavy Snow Showers",
     WeatherType.heavy_snow: "Heavy Snow",
-    WeatherType.thundery_showers: "Thundery Showers"
+    WeatherType.thundery_showers_night: "Thundery Showers",
+    WeatherType.thundery_showers: "Thundery Showers",
+    WeatherType.thunder: "Thunder"
 }
 WARNING_LEVELS = {
     "Yellow": WarningLevel.yellow, "Amber": WarningLevel.amber,
@@ -119,7 +138,7 @@ def process_json_data(location_id: int, json_data: dict) -> None:
         for report in forecast["detailed"]["reports"]:
             timestamp = dt.datetime.strptime(
                 f"{report['localDate']} {report['timeslot']}",
-                "%Y-%m-%d %H:%M").timestamp()
+                "%Y-%m-%d %H:%M").replace(tzinfo=dt.timezone.utc).timestamp()
             wind_speed = (
                 report["windSpeedMph"] if report["gustSpeedMph"] < GUSTS_MPH
                 else report["gustSpeedMph"]) 
@@ -140,9 +159,12 @@ def process_json_data(location_id: int, json_data: dict) -> None:
             # If captured at night, UV will display as low - misleading.
             continue
         day = forecast["summary"]["report"]
+        day_timestamp = dt.datetime.strptime(
+            day["localDate"], "%Y-%m-%d"
+        ).replace(tzinfo=dt.timezone.utc).timestamp()
         record = (
-            location_id, day["localDate"], day["maxTempC"], day["maxTempC"],
-            day["sunrise"], day["sunset"], 
+            location_id, day_timestamp, time_zone_offset_seconds,
+            day["maxTempC"], day["minTempC"], day["sunrise"], day["sunset"], 
             day["uvIndex"], day["pollutionIndex"], day["pollenIndex"])
         daily_conditions_records.append(record)
     data.insert_or_replace_many(data.TIME_TABLE, weather_time_records)

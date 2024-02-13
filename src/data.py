@@ -50,6 +50,19 @@ class WeatherInfo:
     weather_type: get.WeatherType
 
 
+@dataclass
+class ConditionsInfo:
+    """Daily conditions information."""
+    date: dt.date
+    max_temperature: int
+    min_temperature: int
+    sunrise: dt.time
+    sunset: dt.time
+    uv: int
+    pollution: int | None
+    pollen: int | None
+
+
 DATA_FOLDER = pathlib.Path(__file__).parent.parent / "data"
 DOWNLOAD_SETTINGS_FILE = DATA_FOLDER / "download.json"
 EMAIL_SETTINGS_FILE = DATA_FOLDER / "email.json"
@@ -132,11 +145,12 @@ def create_missing_tables() -> None:
         cursor.execute(
             f"""
             CREATE TABLE IF NOT EXISTS {DAY_TABLE}(
-                location_id INTEGER, date DATE,
+                location_id INTEGER,
+                timestamp TIMESTAMP, time_zone_offset INTEGER,
                 max_temperature INTEGER, min_temperature INTEGER,
                 sunrise TIME, sunset TIME, uv INTEGER, pollution INTEGER,
                 pollen INTEGER,
-                PRIMARY KEY(location_id, date),
+                PRIMARY KEY(location_id, timestamp),
                 FOREIGN KEY(location_id)
                     REFERENCES {LOCATION_TABLE}(location_id))""")
         # The Warnings table stores weather warnings information.
@@ -239,3 +253,23 @@ def get_future_weather(location_id: int, hours: int) -> list[WeatherInfo]:
             get.WeatherType(record[9]))
         for record in records]
     return weather_infos
+
+
+def get_future_conditions(location_id: int, days: int) -> list[ConditionsInfo]:
+    """Returns daily conditions for the next N available days."""
+    current_timestamp = time.time()
+    with Database() as cursor:
+        records = cursor.execute(
+            f"""
+            SELECT timestamp, max_temperature, min_temperature,
+                sunrise, sunset, uv, pollution, pollen FROM {DAY_TABLE}
+            WHERE location_id=? AND timestamp - time_zone_offset > ?
+            ORDER BY timestamp ASC LIMIT ?
+            """, (location_id, current_timestamp, days)).fetchall()
+    conditions_infos = [
+        ConditionsInfo(
+            dt.datetime.utcfromtimestamp(record[0]).date(),
+            record[1], record[2], dt.time(*map(int, record[3].split(":"))),
+            dt.time(*map(int, record[4].split(":"))), record[5], record[6],
+            record[7]) for record in records]
+    return conditions_infos
