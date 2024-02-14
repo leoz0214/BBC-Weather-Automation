@@ -110,6 +110,7 @@ WARNING_LEVELS = {
     "Yellow": WarningLevel.yellow, "Amber": WarningLevel.amber,
     "Red": WarningLevel.red
 }
+WARNINGS_REVERSED = {value: key for key, value in WARNING_LEVELS.items()}
 # To save storage space (smaller integers).
 PRESSURE_OFFSET = 1013
 # Month literals.
@@ -171,7 +172,7 @@ def process_json_data(location_id: int, json_data: dict) -> None:
     data.insert_or_replace_many(data.DAY_TABLE, daily_conditions_records)
 
 
-def extract_warning_text_date(text: str) -> dt.datetime:
+def extract_warning_text_timestamp(text: str) -> int:
     """Returns the date as seen in one of the weather warnings texts."""
     parts = text.split()
     hour = None
@@ -184,15 +185,16 @@ def extract_warning_text_date(text: str) -> dt.datetime:
         if part in MONTHS:
             month = MONTHS.index(part) + 1
             day = int(parts[i-1])
-    # Year not given, but use common sense to deduce it
-    # (timezones don't matter).
+    # Year not given, but use common sense to deduce it (timezones irrelevant).
     current_date = dt.date.today()
     current_year = current_date.year
     if (current_date - dt.date(current_year, month, day)).days > 180:
         year = current_year + 1
     else:
         year = current_year
-    return dt.datetime(year, month, day, hour, minute)
+    return dt.datetime(
+        year, month, day, hour, minute
+    ).replace(tzinfo=dt.timezone.utc).timestamp()
 
 
 def add_weather_warnings(location_id: int, soup: BeautifulSoup) -> None:
@@ -210,14 +212,16 @@ def add_weather_warnings(location_id: int, soup: BeautifulSoup) -> None:
             p.text for p in warning_div.find(
                 "div", class_="wr-c-weather-warning__warning-period"
             ).find_all("p") if "wr-o-active" not in p["class"]]
-        issued = extract_warning_text_date(issued_at_text)
-        start = extract_warning_text_date(start_text)
-        end = extract_warning_text_date(end_text)
+        issued = extract_warning_text_timestamp(issued_at_text)
+        start = extract_warning_text_timestamp(start_text)
+        end = extract_warning_text_timestamp(end_text)
         description = warning_div.find(
             "p", class_="wr-c-weather-warning__warning-text").text.strip()
-
+        # BST (+1 hour) or GMT
+        time_zone_offset = 0 if "GMT" in issued_at_text else 3600
         record = (
-            location_id, level, weather_type, issued, start, end, description)
+            location_id, level, weather_type,
+            issued, start, end, time_zone_offset, description)
         warning_records.append(record)
     data.insert_or_replace_many(data.WARNING_TABLE, warning_records)
         

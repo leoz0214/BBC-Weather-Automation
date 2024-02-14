@@ -10,7 +10,7 @@ import get
 
 
 FUTURE_HOURS = 6
-FUTURE_DAYS = 2
+FUTURE_DAYS = 3
 TEMPERATURE_CLASSES = {
     "hottest": 45, "hotter": 35, "warm": 20,
     "mild": 10, "cool": 5, "colder": -10, "coldest": -100
@@ -34,10 +34,15 @@ POLLUTION_CLASSES = {
     "very_high_pollution": 10, "high_pollution": 7,
     "moderate_pollution": 4, "low_pollution": 0
 }
-# Just a guess - can improve on durring pollen season when mass data available.
+# Just a guess - can improve on during pollen season when mass data available.
 POLLEN_CLASSES = {
     "very_high_pollen": 10, "high_pollen": 7,
     "moderate_pollen": 4, "low_pollen": 0
+}
+WARNING_CLASSES = {
+    get.WarningLevel.yellow: "yellow_warning",
+    get.WarningLevel.amber: "amber_warning",
+    get.WarningLevel.red: "red_warning"
 }
 
 
@@ -90,6 +95,12 @@ def generate_html_email(
             h1 {
                 font-size: 40px;
             }
+            h2 {
+                font-size: 35px;
+            }
+            h3 {
+                font-size: 25px;
+            }
             p {
                 white-space: pre-line;
             }
@@ -114,11 +125,52 @@ def generate_html_email(
             .moderate_visibility, .good_visibility, .low_uv,
                 .low_pollution {color: #00cc00;}
             .very_good_visibility, .excellent_visibility {color: #0ca9f7;}
+
+            .yellow_warning {background: yellow;}
+            .amber_warning {background: orange;}
+            .red_warning {background: red;}
+            .yellow_warning, .amber_warning, .red_warning {
+                padding: 10px;
+                margin: 10px;
+            }
+
+            .major_info {font-size: 18px; white-space: pre-line;}
+            .minor_info {font-size: 12px; white-space: pre-line;}
             """)
     with document:
-        tags.h1(
-            f"Weather Report for {location_info.name}, {location_info.region}")
+        location = (
+            f"{location_info.name}, {location_info.region}"
+            if location_info.name != location_info.region
+                else location_info.name)
+        tags.h1(f"Weather Report for {location}")
         tags.hr()
+
+        # Any warnings displayed.
+        warnings = data.get_future_warnings(location_id)
+        if warnings:
+            tags.h2("Warnings")
+            if len(warnings) == 1:
+                tags.p(f"There is currently 1 weather warning in place.")
+            else:
+                tags.p(
+                    f"There are currently {len(warnings)} "
+                    "weather warnings in place.")
+            for warning in warnings:
+                start = warning.start.strftime("%Y-%m-%d at %H:%M")
+                end = warning.end.strftime("%Y-%m-%d at %H:%M")
+                issued = warning.issued.strftime("%Y-%m-%d at %H:%M")
+                with tags.div(cls=WARNING_CLASSES[warning.level]):
+                    tags.h3(
+                        f"{get.WARNINGS_REVERSED[warning.level]} warning "
+                        f"for {warning.weather_type} "
+                        f"{'(ACTIVE)' if warning.active else ''}")
+                    tags.p(f"Start{'ed' if warning.active else 's'}: {start}")
+                    tags.p(f"Ends: {end}")
+                    with tags.p(__pretty=False):
+                        tags.em(warning.description)
+                    tags.p(f"Issued: {issued}")
+            tags.hr()
+
         # Hourly forecast.
         tags.h2("The next few hours...")
         hourly_weather = data.get_future_weather(location_id, FUTURE_HOURS)
@@ -135,30 +187,34 @@ def generate_html_email(
                 weather_info.precipitation_odds)
             visibility_class = VISIBILITY_CLASSES[weather_info.visibility]
             with tags.p(__pretty=False):
-                text(f"Weather Type: {weather_type}\n", False)
-                text(f"Temperature: ", False)
-                tags.span(
-                    f"{weather_info.temperature}°C", cls=temperature_class)
-                text(f" (feels like ", False)
-                tags.span(
-                    f"{weather_info.feels_like_temperature}°C",
-                    cls=feels_like_temperature_class)
-                text(")\n")
-                text(f"Wind: ")
-                if weather_info.wind_speed >= get.GUSTS_MPH:
-                    tags.span(f"{weather_info.wind_speed}mph ", cls="gusts")
-                else:
-                    text(f"{weather_info.wind_speed}mph ")
-                text(f"(from {weather_info.wind_direction})\n")
-                text(f"Humidity: {weather_info.humidity}%\n")
-                text("Precipitation odds: ")
-                tags.span(
-                    f"{weather_info.precipitation_odds}%",
-                    cls=precipitation_class)
-                text(f"\nPressure: {weather_info.pressure}mb")
-                text("\nVisibility: ")
-                tags.span(f"{visibility}", cls=visibility_class)
+                with tags.span(cls="major_info"):
+                    text(f"Weather Type: {weather_type}\n", False)
+                    text(f"Temperature: ", False)
+                    tags.span(
+                        f"{weather_info.temperature}°C", cls=temperature_class)
+                    text(f" (feels like ", False)
+                    tags.span(
+                        f"{weather_info.feels_like_temperature}°C",
+                        cls=feels_like_temperature_class)
+                    text(")\n")
+                    text(f"Wind: ")
+                    if weather_info.wind_speed >= get.GUSTS_MPH:
+                        tags.span(
+                            f"{weather_info.wind_speed}mph ", cls="gusts")
+                    else:
+                        text(f"{weather_info.wind_speed}mph ")
+                    text(f"(from {weather_info.wind_direction})\n")
+                with tags.span(cls="minor_info"):
+                    text(f"Humidity: {weather_info.humidity}%\n")
+                    text("Precipitation odds: ")
+                    tags.span(
+                        f"{weather_info.precipitation_odds}%",
+                        cls=precipitation_class)
+                    text(f"\nPressure: {weather_info.pressure}mb")
+                    text("\nVisibility: ")
+                    tags.span(visibility, cls=visibility_class)
         tags.hr()
+
         # Daily forecast.
         tags.h2("The next few days...")
         daily_conditions = data.get_future_conditions(location_id, FUTURE_DAYS)
@@ -171,7 +227,7 @@ def generate_html_email(
             max_temperature_class = get_temperature_class(max_temperature)
             min_temperature_class = get_temperature_class(min_temperature)
             uv_class = get_uv_class(conditions.uv)
-            with tags.p(__pretty=False):
+            with tags.p(__pretty=False).add(tags.div(cls="major_info")):
                 text("Max / Min temperature: ")
                 tags.span(f"{max_temperature}°C", cls=max_temperature_class)
                 text(" / ")
@@ -187,8 +243,8 @@ def generate_html_email(
                     pollen_class = get_pollen_class(conditions.pollen)
                     text(f"\nPollen Index:")
                     tags.span(conditions.pollen, cls=pollen_class)
-
         tags.hr()
+
         # Footer information.
         text(f"Data obtained at: {location_info.last_updated}")
         url = f"{get.BBC_WEATHER_BASE_URL}/{location_id}"

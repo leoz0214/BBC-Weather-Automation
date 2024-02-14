@@ -63,6 +63,18 @@ class ConditionsInfo:
     pollen: int | None
 
 
+@dataclass
+class WarningInfo:
+    """Weather warning information."""
+    level: get.WarningLevel
+    weather_type: str
+    issued: dt.datetime
+    start: dt.datetime
+    end: dt.datetime
+    description: str
+    active: bool
+
+
 DATA_FOLDER = pathlib.Path(__file__).parent.parent / "data"
 DOWNLOAD_SETTINGS_FILE = DATA_FOLDER / "download.json"
 EMAIL_SETTINGS_FILE = DATA_FOLDER / "email.json"
@@ -158,8 +170,8 @@ def create_missing_tables() -> None:
             f"""
             CREATE TABLE IF NOT EXISTS {WARNING_TABLE}(
                 location_id INTEGER, level INTEGER, weather_type TEXT,
-                issued DATETIME, start DATETIME, end DATETIME,
-                description TEXT,
+                issued TIMESTAMP, start TIMESTAMP, end TIMESTAMP,
+                time_zone_offset INTEGER, description TEXT,
                 PRIMARY KEY(location_id, weather_type, issued),
                 FOREIGN KEY(location_id)
                     REFERENCES {LOCATION_TABLE}(location_id))""")
@@ -273,3 +285,24 @@ def get_future_conditions(location_id: int, days: int) -> list[ConditionsInfo]:
             dt.time(*map(int, record[4].split(":"))), record[5], record[6],
             record[7]) for record in records]
     return conditions_infos
+
+
+def get_future_warnings(location_id: int) -> list[WarningInfo]:
+    """Returns a list of all the warnings in place for a given location."""
+    current_timestamp = time.time()
+    with Database() as cursor:
+        # Only display warnings that have not reached the end.
+        records = cursor.execute(
+            f"""
+            SELECT level, weather_type, issued, start, end, description,
+                time_zone_offset FROM {WARNING_TABLE}
+            WHERE location_id=? AND end - time_zone_offset > ?
+            ORDER BY level DESC, issued ASC
+            """, (location_id, current_timestamp)).fetchall()
+    warnings = [
+        WarningInfo(
+            get.WarningLevel(record[0]), record[1],
+            *map(dt.datetime.utcfromtimestamp, record[2:5]), record[5],
+            current_timestamp >= record[3] - record[6])
+        for record in records]
+    return warnings
