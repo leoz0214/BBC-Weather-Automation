@@ -2,6 +2,7 @@
 import datetime as dt
 import json
 import pathlib
+import re
 import sqlite3
 import time
 from dataclasses import dataclass
@@ -20,7 +21,8 @@ class DownloadSettings:
 class EmailInfo:
     """Sender email, recipient email, location ID and times to send at."""
     sender: str
-    recipient: str
+    password: str
+    recipients: list[str]
     location_id: int
     times: list[dt.time]
 
@@ -86,6 +88,8 @@ DAY_TABLE = "daily_conditions"
 WARNING_TABLE = "warnings"
 LAST_UPDATED_TABLE = "last_updated"
 
+BASIC_EMAIL_VALIDATION_REGEX = re.compile(r"[^@]+@[^@]+\.[^@]+")
+
 
 class Database:
     """Sqlite3 database wrapper."""
@@ -106,24 +110,87 @@ class Database:
         self.connection = None
 
 
+def _remove_duplicates(array: list) -> list:
+    seen = set()
+    uniques = []
+    for value in array:
+        if value in seen:
+            continue
+        uniques.append(value)
+        seen.add(value)
+    return uniques
+
+
 def get_download_settings() -> DownloadSettings:
-    """Reads the download settings JSON file."""
+    """Reads and validates the download settings JSON file."""
     with DOWNLOAD_SETTINGS_FILE.open("r", encoding="utf8") as f:
         json_data = json.load(f)
-    return DownloadSettings(
-        json_data["location_ids"], json_data["refresh_seconds"])
+    location_ids = json_data["location_ids"]
+    if not isinstance(location_ids, list):
+        raise TypeError("Location IDs must be a list.")
+    if not location_ids:
+        raise ValueError("Location IDs list must not be empty.")
+    if any(
+        (not isinstance(location_id, int) or location_id <= 0
+            for location_id in location_ids)
+    ):
+        raise ValueError("Location IDs must be positive integers.")
+    location_ids = _remove_duplicates(location_ids)
+    refresh_seconds = json_data["refresh_seconds"]
+    if (not isinstance(refresh_seconds, (int, float)) or refresh_seconds < 0):
+        raise ValueError("Invalid refresh seconds.")
+    return DownloadSettings(location_ids, refresh_seconds)
+
+
+def _basic_valid_email_address(email: str) -> bool:
+    return bool(re.match(BASIC_EMAIL_VALIDATION_REGEX, email))
 
 
 def get_email_infos() -> list[EmailInfo]:
-    """Returns information on all the emails to send."""
+    """Validates and returns information on all the emails to send."""
     with EMAIL_SETTINGS_FILE.open("r", encoding="utf8") as f:
         json_data = json.load(f)
-    return [
-        EmailInfo(
-            record["sender"], record["recipient"], record["location_id"],
-            [dt.time(*map(int, time_.split(":", maxsplit=1)))
-                for time_ in record["times"]]
-        ) for record in json_data]
+    email_infos = []
+    for record in json_data:
+        sender = record["sender"]
+        if (
+            (not isinstance(sender, str))
+            or (not _basic_valid_email_address(sender))
+        ):
+            raise ValueError("Invalid sender email found.")
+        password = record["password"]
+        if not isinstance(password, str):
+            raise TypeError("Password must be a string.")
+        recipients = record["recipients"]
+        if not isinstance(recipients, list):
+            raise TypeError("Recipients must be a list.")
+        if not recipients:
+            raise ValueError("No email recipients added.")
+        if any(
+            (not isinstance(recipient, str))
+            or not _basic_valid_email_address(recipient)
+                for recipient in recipients
+        ):
+            raise ValueError("Invalid recipient email found.")
+        recipients = _remove_duplicates(recipients)
+        location_id = record["location_id"]
+        if (not isinstance(location_id, int)) or location_id < 0:
+            raise ValueError("Invalid location ID.")
+        times = record["times"]
+        if not isinstance(times, list):
+            raise TypeError("Times must be a list.")
+        if not times:
+            raise ValueError("No email send times added.")
+        try:
+            times = _remove_duplicates(
+                [dt.time(*map(int, time_.split(":", maxsplit=1)))
+                    for time_ in record["times"]])
+        except Exception:
+            raise ValueError("Invalid list of times (HH:MM).")
+        email_info = EmailInfo(
+            sender, password, recipients, location_id, times)
+        email_infos.append(email_info)
+    return email_infos
 
 
 def create_missing_tables() -> None:

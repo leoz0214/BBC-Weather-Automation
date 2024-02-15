@@ -1,5 +1,10 @@
 """Automated email sending tool based on the collected weather data."""
 import datetime as dt
+import smtplib
+import time
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from timeit import default_timer as timer
 
 import dominate
 import dominate.tags as tags
@@ -45,6 +50,10 @@ WARNING_CLASSES = {
     get.WarningLevel.red: "red_warning"
 }
 
+SMTP_SERVER = "smtp.gmail.com"
+SMTP_PORT = 587
+REFRESH_SECONDS = 45
+
 
 def _get_class(value: int, classes: dict[str, int]) -> str:
     return next(
@@ -76,6 +85,14 @@ def get_pollen_class(pollen: int) -> str:
     return _get_class(pollen, POLLEN_CLASSES)
 
 
+def get_title(location_info: data.LocationInfo) -> str:
+    """Returns the title given the location information."""
+    location = (
+        f"{location_info.name}, {location_info.region}"
+        if location_info.name != location_info.region else location_info.name)
+    return f"Weather Report for {location}"
+
+
 def generate_html_email(
     location_id: int, location_info: data.LocationInfo
 ) -> str:
@@ -83,8 +100,7 @@ def generate_html_email(
     Takes the weather data for a given location info and 
     generates a HTML report ready to send as an email.
     """
-    document = dominate.document(
-        title=f"Weather Report for {location_info.name}, {location_info.region}")
+    document = dominate.document(get_title(location_info))
     # Set report CSS.
     with document.head:
         tags.style(
@@ -138,11 +154,7 @@ def generate_html_email(
             .minor_info {font-size: 12px; white-space: pre-line;}
             """)
     with document:
-        location = (
-            f"{location_info.name}, {location_info.region}"
-            if location_info.name != location_info.region
-                else location_info.name)
-        tags.h1(f"Weather Report for {location}")
+        tags.h1(get_title(location_info))
         tags.hr()
 
         # Any warnings displayed.
@@ -255,6 +267,33 @@ def generate_html_email(
     return document.render()
 
 
+def get_recipients_string(recipients: list[str]) -> str:
+    """Returns an appropriate string given recipients."""
+    if len(recipients) == 1:
+        return recipients[0]
+    if len(recipients) == 2:
+        return f"{recipients[0]} and {recipients[1]}"
+    if len(recipients) == 3:
+        return f"{recipients[0]}, {recipients[1]} and {recipients[2]}"
+    return f"{recipients[0]}, {recipients[1]} and {len(recipients) - 2} others"
+
+
+def send_email(email_info: data.EmailInfo, subject: str, body: str) -> None:
+    """Sends the weather report HTML email."""
+    message = MIMEMultipart("alternative")
+    message["Subject"] = subject
+    message["From"] = email_info.sender
+    # To avoid unnecessary email address leakage, 
+    # recipients receive blind carbon copies.
+    message["Bcc"] = ", ".join(email_info.recipients)
+    message.attach(MIMEText(body, "html"))
+    with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as smtp:
+        smtp.ehlo()
+        smtp.starttls()
+        smtp.login(email_info.sender, email_info.password)
+        smtp.send_message(message)
+
+
 def main() -> None:
     """Main procedure of the script."""
     data.create_missing_tables()
@@ -262,6 +301,7 @@ def main() -> None:
         current_time = dt.datetime.now().time().replace(
             second=0, microsecond=0)
         email_infos = data.get_email_infos()
+        start = timer()
         for email_info in email_infos:
             if not any(
                 send_time == current_time for send_time in email_info.times
@@ -269,10 +309,14 @@ def main() -> None:
                 continue
             print(
                 f"Sending weather email from {email_info.sender} to "
-                f"{email_info.recipient} at {current_time.strftime('%H:%M')}")
+                f"{get_recipients_string(email_info.recipients)} at "
+                f"{current_time.strftime('%H:%M')}")
             location_info = data.get_location_info(email_info.location_id)
             email_body = generate_html_email(
                 email_info.location_id, location_info)
+            send_email(email_info, get_title(location_info), email_body)
+        stop = timer()
+        time.sleep(max(0, REFRESH_SECONDS - (stop - start)))
 
 
 if __name__ == "__main__":
