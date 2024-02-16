@@ -6,7 +6,6 @@ or new data.
 """
 import calendar
 import datetime as dt
-import enum
 import json
 import time
 from timeit import default_timer as timer
@@ -18,101 +17,31 @@ from bs4 import BeautifulSoup
 import data
 
 
-class Visibility(enum.Enum):
-    """Visibility level of the human eye."""
-    very_poor = 0
-    poor = 1
-    moderate = 2
-    good = 3
-    very_good = 4
-    excellent = 5
-
-
-class WeatherType(enum.Enum):
-    """Various possible weather types."""
-    clear_sky = 0
-    sunny = 1
-    partly_cloudy = 2
-    sunny_intervals = 3
-    mist = 5
-    fog = 6
-    light_cloud = 7
-    thick_cloud = 8
-    light_rain_showers_night = 9
-    light_rain_showers = 10
-    drizzle = 11
-    light_rain = 12
-    heavy_rain_showers_night = 13
-    heavy_rain_showers = 14
-    heavy_rain = 15
-    sleet_showers_night = 16
-    sleet_showers = 17
-    sleet = 18
-    hail_showers_night = 19
-    hail_showers = 20
-    hail = 21
-    light_snow_showers_night = 22
-    light_snow_showers = 23
-    light_snow = 24
-    heavy_snow_showers_night = 25
-    heavy_snow_showers = 26
-    heavy_snow = 27
-    thundery_showers_night = 28
-    thundery_showers = 29
-    thunder = 30
-
-
-class WarningLevel(enum.Enum):
-    """Severity of extreme weather conditions."""
-    yellow = 0
-    amber = 1
-    red = 2
-
-
 BBC_WEATHER_BASE_URL = "https://www.bbc.com/weather"
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
+# Same as BBC Weather.
+# Minimum significant gust speed to display instead of the actual wind speed.
 GUSTS_MPH = 40
 VISIBILITIES = {
-    "Very Poor": Visibility.very_poor, "Poor": Visibility.poor,
-    "Moderate": Visibility.moderate, "Good": Visibility.good,
-    "Very Good": Visibility.very_good, "Excellent": Visibility.excellent
+    "Very Poor": 0, "Poor": 1, "Moderate": 2,
+    "Good": 3, "Very Good": 4, "Excellent": 5
 }
 VISIBILITIES_REVERSED = {value: key for key, value in VISIBILITIES.items()}
+# From https://www.metoffice.gov.uk/services/data/datapoint/code-definitions
 WEATHER_TYPES = {
-    WeatherType.clear_sky: "Clear Sky", WeatherType.sunny: "Sunshine",
-    WeatherType.partly_cloudy: "Partly Cloudy",
-    WeatherType.sunny_intervals: "Sunny Intervals",
-    WeatherType.mist: "Mist", WeatherType.fog: "Fog",
-    WeatherType.light_cloud: "Light Cloud",
-    WeatherType.thick_cloud: "Thick Cloud",
-    WeatherType.light_rain_showers_night: "Light Rain Showers",
-    WeatherType.light_rain_showers: "Light Rain Showers",
-    WeatherType.drizzle: "Drizzle", WeatherType.light_rain: "Light Rain",
-    WeatherType.heavy_rain_showers_night: "Heavy Rain Showers",
-    WeatherType.heavy_rain_showers: "Heavy Rain Showers",
-    WeatherType.heavy_rain: "Heavy Rain",
-    WeatherType.sleet_showers_night: "Sleet Showers Night",
-    WeatherType.sleet_showers: "Sleet Showers", WeatherType.sleet: "Sleet",
-    WeatherType.hail_showers_night: "Hail Showers",
-    WeatherType.hail_showers: "Hail Showers",
-    WeatherType.hail: "Hail",
-    WeatherType.light_snow_showers_night: "Light Snow Showers",
-    WeatherType.light_snow_showers: "Light Snow Showers",
-    WeatherType.light_snow: "Light Snow",
-    WeatherType.heavy_snow_showers_night: "Heavy Snow Showers",
-    WeatherType.heavy_snow_showers: "Heavy Snow Showers",
-    WeatherType.heavy_snow: "Heavy Snow",
-    WeatherType.thundery_showers_night: "Thundery Showers",
-    WeatherType.thundery_showers: "Thundery Showers",
-    WeatherType.thunder: "Thunder"
+    0: "Clear Sky", 1: "Sunshine", 2: "Partly Cloudy", 3: "Sunny Intervals",
+    5: "Mist", 6: "Fog", 7: "Light Cloud", 8: "Thick Cloud",
+    9: "Light Rain Showers", 10: "Light Rain Showers",
+    11: "Drizzle", 12: "Light Rain", 13: "Heavy Rain Showers",
+    14: "Heavy Rain Showers", 15: "Heavy Rain",
+    16: "Sleet Showers Night", 17: "Sleet Showers", 18: "Sleet",
+    19: "Hail Showers", 20: "Hail Showers", 21: "Hail",
+    22: "Light Snow Showers", 23: "Light Snow Showers", 24: "Light Snow",
+    25: "Heavy Snow Showers", 26: "Heavy Snow Showers", 27: "Heavy Snow",
+    28: "Thundery Showers", 29: "Thundery Showers", 30: "Thunder"
 }
-WARNING_LEVELS = {
-    "Yellow": WarningLevel.yellow, "Amber": WarningLevel.amber,
-    "Red": WarningLevel.red
-}
+WARNING_LEVELS = {"Yellow": 0, "Amber": 1, "Red": 2}
 WARNINGS_REVERSED = {value: key for key, value in WARNING_LEVELS.items()}
-# To save storage space (smaller integers).
-PRESSURE_OFFSET = 1013
 # Month literals.
 MONTHS = tuple(calendar.month_name)[1:]
 MAX_REQUEST_ATTEMPTS = 3
@@ -120,10 +49,9 @@ MAX_REQUEST_ATTEMPTS = 3
 
 def add_location_if_missing(location_info: dict) -> None:
     """Adds location info to the locations table if needed."""
-    record = (
+    data.update_location(
         location_info["id"], location_info["name"], location_info["container"],
         location_info["latitude"], location_info["longitude"])
-    data.insert_or_replace(data.LOCATION_TABLE, record)
 
 
 def process_json_data(location_id: int, json_data: dict) -> None:
@@ -146,11 +74,9 @@ def process_json_data(location_id: int, json_data: dict) -> None:
             record = (
                 location_id, timestamp, time_zone_offset_seconds,
                 report["temperatureC"], report["feelsLikeTemperatureC"],
-                wind_speed, report["windDirection"],
-                report["humidity"],
+                wind_speed, report["windDirection"], report["humidity"],
                 report["precipitationProbabilityInPercent"],
-                report["pressure"] - PRESSURE_OFFSET,
-                VISIBILITIES[report["visibility"]].value,
+                report["pressure"], VISIBILITIES[report["visibility"]],
                 report["weatherType"])
             weather_time_records.append(record)
         # Daily data.
@@ -192,20 +118,19 @@ def extract_warning_text_timestamp(text: str) -> int:
         year = current_year + 1
     else:
         year = current_year
-    return dt.datetime(
-        year, month, day, hour, minute
-    ).replace(tzinfo=dt.timezone.utc).timestamp()
+    return dt.datetime(year, month, day, hour, minute).replace(
+        tzinfo=dt.timezone.utc).timestamp()
 
 
 def add_weather_warnings(location_id: int, soup: BeautifulSoup) -> None:
     """
-    Searches the webpage for any weather warnings and inserts them
+    Searches the HTML page for any weather warnings and inserts them
     into the database as required.
     """
     warning_records = []
     for warning_div in soup.find_all("div", class_="wr-c-weather-warning"):
         level, weather_type = warning_div.find("h3").text.split(" warning of ")
-        level = WARNING_LEVELS[level].value
+        level = WARNING_LEVELS[level]
         issued_at_text = warning_div.find(
             "p", class_="wr-c-weather-warning__issued-at-date").text
         start_text, end_text = [
@@ -217,7 +142,7 @@ def add_weather_warnings(location_id: int, soup: BeautifulSoup) -> None:
         end = extract_warning_text_timestamp(end_text)
         description = warning_div.find(
             "p", class_="wr-c-weather-warning__warning-text").text.strip()
-        # BST (+1 hour) or GMT
+        # BST (UTC+1) or GMT (UTC).
         time_zone_offset = 0 if "GMT" in issued_at_text else 3600
         record = (
             location_id, level, weather_type,

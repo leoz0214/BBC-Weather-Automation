@@ -1,4 +1,4 @@
-"""Module handling file/database input and output code."""
+"""Module handling file/database input/output and querying."""
 import datetime as dt
 import json
 import pathlib
@@ -19,7 +19,7 @@ class DownloadSettings:
 
 @dataclass
 class EmailInfo:
-    """Sender email, recipient email, location ID and times to send at."""
+    """Sender email, recipient emails, location ID and times to send at."""
     sender: str
     password: str
     recipients: list[str]
@@ -48,8 +48,8 @@ class WeatherInfo:
     humidity: int
     precipitation_odds: int
     pressure: int
-    visibility: get.Visibility
-    weather_type: get.WeatherType
+    visibility: str
+    weather_type: str
 
 
 @dataclass
@@ -68,7 +68,7 @@ class ConditionsInfo:
 @dataclass
 class WarningInfo:
     """Weather warning information."""
-    level: get.WarningLevel
+    level: str
     weather_type: str
     issued: dt.datetime
     start: dt.datetime
@@ -77,6 +77,7 @@ class WarningInfo:
     active: bool
 
 
+# Hard-coded file/folder paths relevant to the progrm.
 DATA_FOLDER = pathlib.Path(__file__).parent.parent / "data"
 DOWNLOAD_SETTINGS_FILE = DATA_FOLDER / "download.json"
 EMAIL_SETTINGS_FILE = DATA_FOLDER / "email.json"
@@ -86,8 +87,7 @@ LOCATION_TABLE = "locations"
 TIME_TABLE = "weather_times"
 DAY_TABLE = "daily_conditions"
 WARNING_TABLE = "warnings"
-LAST_UPDATED_TABLE = "last_updated"
-
+# Simple email regex as a sanity check for user input.
 BASIC_EMAIL_VALIDATION_REGEX = re.compile(r"[^@]+@[^@]+\.[^@]+")
 
 
@@ -111,6 +111,7 @@ class Database:
 
 
 def _remove_duplicates(array: list) -> list:
+    # Deletes duplicates from the array, maintaining order.
     seen = set()
     uniques = []
     for value in array:
@@ -137,12 +138,13 @@ def get_download_settings() -> DownloadSettings:
         raise ValueError("Location IDs must be positive integers.")
     location_ids = _remove_duplicates(location_ids)
     refresh_seconds = json_data["refresh_seconds"]
-    if (not isinstance(refresh_seconds, (int, float)) or refresh_seconds < 0):
+    if not isinstance(refresh_seconds, (int, float)) or refresh_seconds < 0:
         raise ValueError("Invalid refresh seconds.")
     return DownloadSettings(location_ids, refresh_seconds)
 
 
 def _basic_valid_email_address(email: str) -> bool:
+    # Returns True if the email address is valid to a basic extent.
     return bool(re.match(BASIC_EMAIL_VALIDATION_REGEX, email))
 
 
@@ -196,14 +198,13 @@ def get_email_infos() -> list[EmailInfo]:
 def create_missing_tables() -> None:
     """Creates all required tables if they do not already exist."""
     with Database() as cursor:
-        # The Location table stores information about each location
-        # by location ID.
+        # The Location table stores information about each location by ID.
         cursor.execute(
             f"""
             CREATE TABLE IF NOT EXISTS {LOCATION_TABLE}(
                 location_id INTEGER PRIMARY KEY,
-                name TEXT, region TEXT,
-                latitude REAL, longitude REAL)""")
+                name TEXT, region TEXT, latitude REAL, longitude REAL,
+                last_updated DATETIME)""")
         # The Time table stores the weather information at fixed
         # times, usually at hourly intervals.
         cursor.execute(
@@ -242,19 +243,11 @@ def create_missing_tables() -> None:
                 PRIMARY KEY(location_id, weather_type, issued),
                 FOREIGN KEY(location_id)
                     REFERENCES {LOCATION_TABLE}(location_id))""")
-        # The last updated table simply stores the last updated
-        # date/time for each location ID.
-        cursor.execute(
-            f"""
-            CREATE TABLE IF NOT EXISTS {LAST_UPDATED_TABLE}(
-                location_id INTEGER PRIMARY KEY, last_updated DATETIME,
-                FOREIGN KEY(location_id)
-                    REFERENCES {LOCATION_TABLE}(location_id))""")
         
 
 def insert_or_replace(table: str, values: tuple) -> None:
     """
-    Inserts a given record into a table.
+    Inserts a given whole record into a table.
     Replace if a record with the same primary key already exists.
     """
     with Database() as cursor:
@@ -266,7 +259,7 @@ def insert_or_replace(table: str, values: tuple) -> None:
 
 def insert_or_replace_many(table: str, records: list[tuple]) -> None:
     """
-    Inserts given records into a table.
+    Inserts given whole records into a table.
     Replace if a record with the same primary key already exists.
     """
     with Database() as cursor:
@@ -284,32 +277,50 @@ def last_updated_changed(location_id: int, last_updated: str) -> bool:
     """
     with Database() as cursor:
         previous_last_updated = cursor.execute(
-            f"""
-            SELECT last_updated FROM {LAST_UPDATED_TABLE}
-            WHERE location_id=?""", (location_id,)).fetchone()
-    changed = (
-        previous_last_updated is None # First time.
-        or last_updated != previous_last_updated[0])
-    if changed:
-        insert_or_replace(LAST_UPDATED_TABLE, (location_id, last_updated))
+            f"SELECT last_updated FROM {LOCATION_TABLE} WHERE location_id=?",
+                (location_id,)).fetchone()[0]
+        changed = last_updated != previous_last_updated
+        if changed:
+            cursor.execute(
+                f"""
+                UPDATE {LOCATION_TABLE} SET last_updated=? WHERE location_id=?
+                """, (last_updated, location_id))
     return changed
 
 
 def get_location_info(location_id: int) -> LocationInfo:
     """Returns the location information by location ID."""
     with Database() as cursor:
-        name, region, latitude, longitude = cursor.execute(
-            f"""
-            SELECT name, region, latitude, longitude
-            FROM {LOCATION_TABLE} WHERE location_id=?""", (location_id,)
-        ).fetchone()
-        last_updated = cursor.execute(
-            f"""
-            SELECT last_updated FROM {LAST_UPDATED_TABLE}
-            WHERE location_id=?""", (location_id,)).fetchone()
-        if last_updated is not None:
-            last_updated = last_updated[0]
+        _, name, region, latitude, longitude, last_updated = cursor.execute(
+            f"SELECT * FROM {LOCATION_TABLE} WHERE location_id=?",
+            (location_id,)).fetchone()
     return LocationInfo(name, region, latitude, longitude, last_updated)
+
+
+def update_location(
+    location_id: int, name: str, region: str,
+    latitude: float, longitude: float
+) -> None:
+    """
+    Updates a given location, except last updated time.
+    Create a new record if none with the given location ID exists.
+    """
+    # Check if there is existing data for the given location.
+    with Database() as cursor:
+        exists = cursor.execute(
+            f"""
+            SELECT EXISTS (SELECT * FROM {LOCATION_TABLE} WHERE location_id=?)
+            """, (location_id,)).fetchone()[0]
+    if not exists:
+        record = (location_id, name, region, latitude, longitude, None)
+        insert_or_replace(LOCATION_TABLE, record)
+        return
+    with Database() as cursor:
+        cursor.execute(
+            f"""
+            UPDATE {LOCATION_TABLE}
+            SET name=?, region=?, latitude=?, longitude=? WHERE location_id=?
+            """, (name, region, latitude, longitude, location_id))
 
 
 def get_future_weather(location_id: int, hours: int) -> list[WeatherInfo]:
@@ -327,9 +338,8 @@ def get_future_weather(location_id: int, hours: int) -> list[WeatherInfo]:
     weather_infos = [
         WeatherInfo(
             dt.datetime.utcfromtimestamp(record[0]), record[1], record[2],
-            record[3], record[4], record[5], record[6],
-            record[7] + get.PRESSURE_OFFSET, get.Visibility(record[8]),
-            get.WeatherType(record[9]))
+            record[3], record[4], record[5], record[6], record[7],
+            get.VISIBILITIES_REVERSED[record[8]], get.WEATHER_TYPES[record[9]])
         for record in records]
     return weather_infos
 
@@ -358,7 +368,7 @@ def get_future_warnings(location_id: int) -> list[WarningInfo]:
     """Returns a list of all the warnings in place for a given location."""
     current_timestamp = time.time()
     with Database() as cursor:
-        # Only display warnings that have not reached the end.
+        # Only display warnings that have not finished (in the past).
         records = cursor.execute(
             f"""
             SELECT level, weather_type, issued, start, end, description,
@@ -368,7 +378,7 @@ def get_future_warnings(location_id: int) -> list[WarningInfo]:
             """, (location_id, current_timestamp)).fetchall()
     warnings = [
         WarningInfo(
-            get.WarningLevel(record[0]), record[1],
+            get.WARNINGS_REVERSED[record[0]], record[1],
             *map(dt.datetime.utcfromtimestamp, record[2:5]), record[5],
             current_timestamp >= record[3] - record[6])
         for record in records]

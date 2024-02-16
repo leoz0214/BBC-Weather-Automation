@@ -14,45 +14,44 @@ import data
 import get
 
 
+# Number of hours/days ahead to display data for.
 FUTURE_HOURS = 6
 FUTURE_DAYS = 3
+
 TEMPERATURE_CLASSES = {
     "hottest": 45, "hotter": 35, "warm": 20,
     "mild": 10, "cool": 5, "colder": -10, "coldest": -100
 }
 PRECIPITATION_ODDS_CLASSES = {
-    "precip_likely": 75, "precip_chance": 25, "precip_unlikely": 0
+    "precip-likely": 75, "precip-chance": 25, "precip-unlikely": 0
 }
 VISIBILITY_CLASSES = {
-    get.Visibility.excellent: "excellent_visibility",
-    get.Visibility.very_good: "very_good_visibility",
-    get.Visibility.good: "good_visibility",
-    get.Visibility.moderate: "moderate_visibility",
-    get.Visibility.poor: "poor_visibility",
-    get.Visibility.very_poor: "very_poor_visibility"
+    "Excellent": "excellent-visibility", "Very Good": "very-good-visibility",
+    "Good": "good-visibility", "Moderate": "moderate-visibility",
+    "Poor": "poor-visibility", "Very Poor": "very_poor-visibility"
 }
 UV_CLASSES = {
-    "extreme_uv": 11, "very_high_uv": 8, "high_uv": 6,
-    "moderate_uv": 3, "low_uv": 0
+    "extreme-uv": 11, "very-high-uv": 8, "high-uv": 6,
+    "moderate-uv": 3, "low-uv": 0
 }
 POLLUTION_CLASSES = {
-    "very_high_pollution": 10, "high_pollution": 7,
-    "moderate_pollution": 4, "low_pollution": 0
+    "very-high-pollution": 10, "high-pollution": 7,
+    "moderate-pollution": 4, "low-pollution": 0
 }
 # Just a guess - can improve on during pollen season when mass data available.
 POLLEN_CLASSES = {
-    "very_high_pollen": 10, "high_pollen": 7,
-    "moderate_pollen": 4, "low_pollen": 0
+    "very-high-pollen": 10, "high-pollen": 7,
+    "moderate-pollen": 4, "low-pollen": 0
 }
 WARNING_CLASSES = {
-    get.WarningLevel.yellow: "yellow_warning",
-    get.WarningLevel.amber: "amber_warning",
-    get.WarningLevel.red: "red_warning"
+    "Yellow": "yellow-warning", "Amber": "amber-warning", "Red": "red-warning"
 }
 
+# Email sending configuration information.
 SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 587
 REFRESH_SECONDS = 45
+MAX_EMAIL_SEND_ATTEMPTS = 3
 
 
 def _get_class(value: int, classes: dict[str, int]) -> str:
@@ -105,24 +104,12 @@ def generate_html_email(
     with document.head:
         tags.style(
             r"""
-            * {
-                font-family: sans-serif;
-            }
-            h1 {
-                font-size: 40px;
-            }
-            h2 {
-                font-size: 35px;
-            }
-            h3 {
-                font-size: 25px;
-            }
-            p {
-                white-space: pre-line;
-            }
-            span {
-                white-space: nowrap;
-            }
+            * {font-family: sans-serif;}
+            h1 {font-size: 40px;}
+            h2 {font-size: 35px;}
+            h3 {font-size: 25px;}
+            p {white-space: pre-line;}
+            span {white-space: nowrap;}
 
             .hottest {color: #c21a11;}
             .hotter {color: #f02318;}
@@ -132,26 +119,26 @@ def generate_html_email(
             .colder {color: #0c86f7;}
             .coldest {color: #267bc9;}
 
-            .extreme_uv {color: violet;}
-            .gusts, .precip_likely, .very_poor_visibility,
-                .very_high_uv, .very_high_pollution {color: red;}
-            .precip_chance, .poor_visibility, .high_uv,
-                .high_pollution {color: orange;}
-            .moderate_uv, .moderate_pollution {color: #c3eb34;}
-            .moderate_visibility, .good_visibility, .low_uv,
-                .low_pollution {color: #00cc00;}
-            .very_good_visibility, .excellent_visibility {color: #0ca9f7;}
+            .extreme-uv {color: violet;}
+            .gusts, .precip-likely, .very-poor-visibility,
+                .very-high-uv, .very-high-pollution {color: red;}
+            .precip-chance, .poor-visibility, .high-uv,
+                .high-pollution {color: orange;}
+            .moderate-uv, .moderate-pollution {color: #c3eb34;}
+            .moderate-visibility, .good-visibility, .low-uv,
+                .low-pollution {color: #00cc00;}
+            .very-good-visibility, .excellent-visibility {color: #0ca9f7;}
 
-            .yellow_warning {background: yellow;}
-            .amber_warning {background: orange;}
-            .red_warning {background: red;}
-            .yellow_warning, .amber_warning, .red_warning {
+            .yellow-warning {background: yellow;}
+            .amber-warning {background: orange;}
+            .red-warning {background: red;}
+            .yellow-warning, .amber-warning, .red-warning {
                 padding: 10px;
                 margin: 10px;
             }
 
-            .major_info {font-size: 18px; white-space: pre-line;}
-            .minor_info {font-size: 12px; white-space: pre-line;}
+            .major-info {font-size: 18px; white-space: pre-line;}
+            .minor-info {font-size: 12px; white-space: pre-line;}
             """)
     with document:
         tags.h1(get_title(location_info))
@@ -173,7 +160,7 @@ def generate_html_email(
                 issued = warning.issued.strftime("%Y-%m-%d at %H:%M")
                 with tags.div(cls=WARNING_CLASSES[warning.level]):
                     tags.h3(
-                        f"{get.WARNINGS_REVERSED[warning.level]} warning "
+                        f"{warning.level} warning "
                         f"for {warning.weather_type} "
                         f"{'(ACTIVE)' if warning.active else ''}")
                     tags.p(f"Start{'ed' if warning.active else 's'}: {start}")
@@ -189,9 +176,6 @@ def generate_html_email(
         for weather_info in hourly_weather:
             # Only show HH:MM, not HH:MM:SS
             tags.h3(f"{weather_info.date_time.time().strftime('%H:%M')}")
-            weather_type = get.WEATHER_TYPES[weather_info.weather_type]
-            visibility = get.VISIBILITIES_REVERSED[weather_info.visibility]
-
             temperature_class = get_temperature_class(weather_info.temperature)
             feels_like_temperature_class = get_temperature_class(
                 weather_info.feels_like_temperature)
@@ -199,24 +183,24 @@ def generate_html_email(
                 weather_info.precipitation_odds)
             visibility_class = VISIBILITY_CLASSES[weather_info.visibility]
             with tags.p(__pretty=False):
-                with tags.span(cls="major_info"):
-                    text(f"Weather Type: {weather_type}\n", False)
-                    text(f"Temperature: ", False)
+                with tags.span(cls="major-info"):
+                    text(f"Weather Type: {weather_info.weather_type}\n", False)
+                    text("Temperature: ", False)
                     tags.span(
                         f"{weather_info.temperature}°C", cls=temperature_class)
-                    text(f" (feels like ", False)
+                    text(" (feels like ", False)
                     tags.span(
                         f"{weather_info.feels_like_temperature}°C",
                         cls=feels_like_temperature_class)
                     text(")\n")
-                    text(f"Wind: ")
+                    text("Wind: ")
                     if weather_info.wind_speed >= get.GUSTS_MPH:
                         tags.span(
                             f"{weather_info.wind_speed}mph ", cls="gusts")
                     else:
                         text(f"{weather_info.wind_speed}mph ")
                     text(f"(from {weather_info.wind_direction})\n")
-                with tags.span(cls="minor_info"):
+                with tags.span(cls="minor-info"):
                     text(f"Humidity: {weather_info.humidity}%\n")
                     text("Precipitation odds: ")
                     tags.span(
@@ -224,7 +208,7 @@ def generate_html_email(
                         cls=precipitation_class)
                     text(f"\nPressure: {weather_info.pressure}mb")
                     text("\nVisibility: ")
-                    tags.span(visibility, cls=visibility_class)
+                    tags.span(weather_info.visibility, cls=visibility_class)
         tags.hr()
 
         # Daily forecast.
@@ -239,7 +223,7 @@ def generate_html_email(
             max_temperature_class = get_temperature_class(max_temperature)
             min_temperature_class = get_temperature_class(min_temperature)
             uv_class = get_uv_class(conditions.uv)
-            with tags.p(__pretty=False).add(tags.div(cls="major_info")):
+            with tags.p(__pretty=False).add(tags.div(cls="major-info")):
                 text("Max / Min temperature: ")
                 tags.span(f"{max_temperature}°C", cls=max_temperature_class)
                 text(" / ")
@@ -268,7 +252,7 @@ def generate_html_email(
 
 
 def get_recipients_string(recipients: list[str]) -> str:
-    """Returns an appropriate string given recipients."""
+    """Returns an appropriate string displaying the recipients."""
     if len(recipients) == 1:
         return recipients[0]
     if len(recipients) == 2:
@@ -287,19 +271,35 @@ def send_email(email_info: data.EmailInfo, subject: str, body: str) -> None:
     # recipients receive blind carbon copies.
     message["Bcc"] = ", ".join(email_info.recipients)
     message.attach(MIMEText(body, "html"))
-    with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as smtp:
-        smtp.ehlo()
-        smtp.starttls()
-        smtp.login(email_info.sender, email_info.password)
-        smtp.send_message(message)
+    # Attempts email sending multiple times before giving up.
+    attempts = MAX_EMAIL_SEND_ATTEMPTS
+    while True:
+        try:
+            with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as smtp:
+                smtp.ehlo()
+                smtp.starttls()
+                smtp.login(email_info.sender, email_info.password)
+                smtp.send_message(message)
+                return
+        except Exception as e:
+            attempts -= 1
+            if not attempts:
+                raise e
+            time.sleep(1)
 
 
 def main() -> None:
     """Main procedure of the script."""
     data.create_missing_tables()
+    last_sent_time = None
     while True:
-        current_time = dt.datetime.now().time().replace(
+        current_date_time = dt.datetime.now()
+        current_time = current_date_time.time().replace(
             second=0, microsecond=0)
+        # Critical - ensure only 1 email sent for a given time (HH:MM) to send.
+        if current_time == last_sent_time:
+            time.sleep(1)
+            continue
         email_infos = data.get_email_infos()
         start = timer()
         for email_info in email_infos:
@@ -307,15 +307,16 @@ def main() -> None:
                 send_time == current_time for send_time in email_info.times
             ):
                 continue
-            print(
-                f"Sending weather email from {email_info.sender} to "
-                f"{get_recipients_string(email_info.recipients)} at "
-                f"{current_time.strftime('%H:%M')}")
             location_info = data.get_location_info(email_info.location_id)
             email_body = generate_html_email(
                 email_info.location_id, location_info)
             send_email(email_info, get_title(location_info), email_body)
+            print(
+                f"Successfully sent weather email from {email_info.sender} to "
+                f"{get_recipients_string(email_info.recipients)} at "
+                f"{current_date_time.strftime('%Y-%m-%d %H:%M')}")
         stop = timer()
+        last_sent_time = current_time
         time.sleep(max(0, REFRESH_SECONDS - (stop - start)))
 
 
