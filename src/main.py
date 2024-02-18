@@ -12,6 +12,7 @@ import get
 import send
 
 
+# Allow some time for the get script to begin and update any data.
 SEND_START_DELAY = 15
 
 
@@ -26,7 +27,6 @@ class WeatherAutomation:
         print("Data collection script started.")
         threading.Thread(
             target=lambda: self._run(get.main), daemon=True).start()
-        # Give some time for the get script to begin.
         time.sleep(SEND_START_DELAY)
         print("Email sending script started.")
         threading.Thread(
@@ -41,9 +41,15 @@ class WeatherAutomation:
         try:
             function()
         except Exception as e:
+            # Error occurred - terminate overall script.
             print(f"Error: {e}")
             self.exception = e
 
 
-if __name__ == "__main__":
+def main() -> None:
+    """Main procedure of the script."""
     WeatherAutomation().start()
+
+
+if __name__ == "__main__":
+    main()

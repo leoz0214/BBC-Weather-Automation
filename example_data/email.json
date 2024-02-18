@@ -1,0 +1,16 @@
+[
+    {
+        "sender": "sender@gmail.com",
+        "password": "google_app_password",
+        "recipients": [
+            "recipient@abc.com",
+            "recipient2@def.com"
+        ],
+        "location_id": 2643743,
+        "times": [
+            "09:00",
+            "14:30", 
+            "20:00"
+        ]
+    }
+]

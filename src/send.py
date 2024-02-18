@@ -55,6 +55,7 @@ MAX_EMAIL_SEND_ATTEMPTS = 3
 
 
 def _get_class(value: int, classes: dict[str, int]) -> str:
+    # Returns appropriate class based on class, min pairs.
     return next(
         class_ for class_, min_value in classes.items() if value >= min_value)
 
@@ -294,6 +295,7 @@ def main() -> None:
     last_sent_time = None
     while True:
         current_date_time = dt.datetime.now()
+        # Extract current time in HH:MM.
         current_time = current_date_time.time().replace(
             second=0, microsecond=0)
         # Critical - ensure only 1 email sent for a given time (HH:MM) to send.
@@ -303,9 +305,7 @@ def main() -> None:
         email_infos = data.get_email_infos()
         start = timer()
         for email_info in email_infos:
-            if not any(
-                send_time == current_time for send_time in email_info.times
-            ):
+            if current_time not in email_info.times:
                 continue
             location_info = data.get_location_info(email_info.location_id)
             email_body = generate_html_email(

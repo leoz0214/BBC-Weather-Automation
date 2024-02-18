@@ -1,0 +1,3 @@
+requests # Sending requests to BBC weather.
+beautifulsoup4 # Parsing BBC weather page data.
+dominate # Generating HTML weather report.

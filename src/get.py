@@ -10,7 +10,6 @@ import json
 import time
 from timeit import default_timer as timer
 
-import lxml
 import requests as rq
 from bs4 import BeautifulSoup
 
@@ -91,7 +90,7 @@ def process_json_data(location_id: int, json_data: dict) -> None:
         ).replace(tzinfo=dt.timezone.utc).timestamp()
         record = (
             location_id, day_timestamp, time_zone_offset_seconds,
-            day["maxTempC"], day["minTempC"], day["sunrise"], day["sunset"], 
+            day["maxTempC"], day["minTempC"], day["sunrise"], day["sunset"],
             day["uvIndex"], day["pollutionIndex"], day["pollenIndex"])
         daily_conditions_records.append(record)
     data.insert_or_replace_many(data.TIME_TABLE, weather_time_records)
@@ -112,6 +111,7 @@ def extract_warning_text_timestamp(text: str) -> int:
             month = MONTHS.index(part) + 1
             day = int(parts[i-1])
     # Year not given, but use common sense to deduce it (timezones irrelevant).
+    # No warning is going to last very long in reality (usually 1 week max).
     current_date = dt.date.today()
     current_year = current_date.year
     if (current_date - dt.date(current_year, month, day)).days > 180:
@@ -166,7 +166,7 @@ def main() -> None:
                 try:
                     response = rq.get(url, headers=HEADERS)
                     if response.status_code == 200:
-                        soup = BeautifulSoup(response.text, "lxml")
+                        soup = BeautifulSoup(response.text, "html.parser")
                         break
                 except Exception as e:
                     attempts -= 1

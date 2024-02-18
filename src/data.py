@@ -77,7 +77,7 @@ class WarningInfo:
     active: bool
 
 
-# Hard-coded file/folder paths relevant to the progrm.
+# Hard-coded file/folder paths relevant to the program.
 DATA_FOLDER = pathlib.Path(__file__).parent.parent / "data"
 DOWNLOAD_SETTINGS_FILE = DATA_FOLDER / "download.json"
 EMAIL_SETTINGS_FILE = DATA_FOLDER / "email.json"
@@ -196,7 +196,11 @@ def get_email_infos() -> list[EmailInfo]:
 
 
 def create_missing_tables() -> None:
-    """Creates all required tables if they do not already exist."""
+    """
+    Creates all required tables if they do not already exist.
+    Store data as compactly as possible using integers mapped
+    to corresponding values in the program.
+    """
     with Database() as cursor:
         # The Location table stores information about each location by ID.
         cursor.execute(
@@ -215,8 +219,7 @@ def create_missing_tables() -> None:
                 temperature INTEGER, feels_like_temperature INTEGER,
                 wind_speed INTEGER, wind_direction TEXT,
                 humidity INTEGER, precipitation_odds INTEGER,
-                pressure INTEGER, visibility INTEGER,
-                weather_type INTEGER,
+                pressure INTEGER, visibility INTEGER, weather_type INTEGER,
                 PRIMARY KEY(location_id, timestamp),
                 FOREIGN KEY(location_id)
                     REFERENCES {LOCATION_TABLE}(location_id))""")
@@ -253,8 +256,7 @@ def insert_or_replace(table: str, values: tuple) -> None:
     with Database() as cursor:
         cursor.execute(
             f"INSERT OR REPLACE INTO {table} "
-            f"VALUES({','.join('?' * len(values))})",
-            values)
+            f"VALUES({','.join('?' * len(values))})", values)
 
 
 def insert_or_replace_many(table: str, records: list[tuple]) -> None:
@@ -272,8 +274,7 @@ def insert_or_replace_many(table: str, records: list[tuple]) -> None:
 def last_updated_changed(location_id: int, last_updated: str) -> bool:
     """
     Returns True if the last updated date/time for a given location ID has
-    changed, also updates the last updated date/time if a change has indeed
-    occurred.
+    changed, also updates the last updated date/time if a change has occurred.
     """
     with Database() as cursor:
         previous_last_updated = cursor.execute(
@@ -298,8 +299,7 @@ def get_location_info(location_id: int) -> LocationInfo:
 
 
 def update_location(
-    location_id: int, name: str, region: str,
-    latitude: float, longitude: float
+    location_id: int, name: str, region: str, latitude: float, longitude: float
 ) -> None:
     """
     Updates a given location, except last updated time.
