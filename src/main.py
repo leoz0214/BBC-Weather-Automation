@@ -3,6 +3,8 @@ This script combines the data collection and email sending
 by running both scripts in separate threads, terminating
 upon failure (error) in either script.
 """
+import data
+import logging
 import threading
 import time
 import sys
@@ -24,11 +26,11 @@ class WeatherAutomation:
     
     def start(self) -> None:
         """Starts the dual-script."""
-        print("Data collection script started.")
+        logging.info("Data collection script started.")
         threading.Thread(
             target=lambda: self._run(get.main), daemon=True).start()
         time.sleep(SEND_START_DELAY)
-        print("Email sending script started.")
+        logging.info("Email sending script started.")
         threading.Thread(
             target=lambda: self._run(send.main), daemon=True).start()
         # Busy waiting, waiting for an exception otherwise keep running.
@@ -42,12 +44,17 @@ class WeatherAutomation:
             function()
         except Exception as e:
             # Error occurred - terminate overall script.
-            print(f"Error: {e}")
+            logging.critical(f"Fatal Error: {e}")
             self.exception = e
 
 
 def main() -> None:
     """Main procedure of the script."""
+    logging.basicConfig(
+        handlers=(logging.FileHandler(data.LOG_FILE), logging.StreamHandler()),
+        encoding="utf8", level=logging.INFO,
+        format= "%(asctime)s: %(levelname)s - %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S")
     WeatherAutomation().start()
 
 

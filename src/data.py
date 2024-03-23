@@ -82,6 +82,7 @@ DATA_FOLDER = pathlib.Path(__file__).parent.parent / "data"
 DOWNLOAD_SETTINGS_FILE = DATA_FOLDER / "download.json"
 EMAIL_SETTINGS_FILE = DATA_FOLDER / "email.json"
 DATABASE = DATA_FOLDER / "database.db"
+LOG_FILE = DATA_FOLDER / "log.log"
 # Database tables.
 LOCATION_TABLE = "locations"
 TIME_TABLE = "weather_times"

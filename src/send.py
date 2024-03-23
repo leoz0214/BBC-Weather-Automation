@@ -1,5 +1,6 @@
 """Automated email sending tool based on the collected weather data."""
 import datetime as dt
+import logging
 import smtplib
 import time
 from email.mime.multipart import MIMEMultipart
@@ -121,12 +122,13 @@ def generate_html_email(
             .coldest {color: #267bc9;}
 
             .extreme-uv {color: violet;}
-            .gusts, .precip-likely, .very-poor-visibility,
-                .very-high-uv, .very-high-pollution {color: red;}
+            .gusts, .precip-likely, .very-poor-visibility, .very-high-uv,
+                .very-high-pollution, .very-high-pollen {color: red;}
             .precip-chance, .poor-visibility, .high-uv,
-                .high-pollution {color: orange;}
-            .moderate-uv, .moderate-pollution {color: #c3eb34;}
-            .moderate-visibility, .good-visibility, .low-uv,
+                .high-pollution, .high-pollen {color: orange;}
+            .moderate-uv, .moderate-pollution, .moderate-pollen
+                {color: #c3eb34;}
+            .moderate-visibility, .good-visibility, .low-uv, .low-pollen,
                 .low-pollution {color: #00cc00;}
             .very-good-visibility, .excellent-visibility {color: #0ca9f7;}
 
@@ -238,7 +240,7 @@ def generate_html_email(
                     tags.span(conditions.pollution, cls=pollution_class)
                 if conditions.pollen is not None:
                     pollen_class = get_pollen_class(conditions.pollen)
-                    text(f"\nPollen Index:")
+                    text(f"\nPollen Index: ")
                     tags.span(conditions.pollen, cls=pollen_class)
         tags.hr()
 
@@ -311,7 +313,7 @@ def main() -> None:
             email_body = generate_html_email(
                 email_info.location_id, location_info)
             send_email(email_info, get_title(location_info), email_body)
-            print(
+            logging.info(
                 f"Successfully sent weather email from {email_info.sender} to "
                 f"{get_recipients_string(email_info.recipients)} at "
                 f"{current_date_time.strftime('%Y-%m-%d %H:%M')}")

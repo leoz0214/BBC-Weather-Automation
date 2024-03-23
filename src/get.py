@@ -7,6 +7,7 @@ or new data.
 import calendar
 import datetime as dt
 import json
+import logging
 import time
 from timeit import default_timer as timer
 
@@ -155,7 +156,8 @@ def main() -> None:
     """Main procedure of the program."""
     data.create_missing_tables()
     while True:
-        print(f"Obtaining data at {dt.datetime.now().replace(microsecond=0)}")
+        logging.info(
+            f"Obtaining data at {dt.datetime.now().replace(microsecond=0)}")
         start = timer()
         download_settings = data.get_download_settings()
         for location_id in download_settings.location_ids:
@@ -166,7 +168,11 @@ def main() -> None:
                 try:
                     response = rq.get(url, headers=HEADERS)
                     if response.status_code == 200:
-                        soup = BeautifulSoup(response.text, "html.parser")
+                        # Attempts to use LXML is available.
+                        try:
+                            soup = BeautifulSoup(response.text, "lxml")
+                        except Exception:
+                            soup = BeautifulSoup(response.text, "html.parser")
                         break
                 except Exception as e:
                     attempts -= 1
@@ -179,11 +185,11 @@ def main() -> None:
             add_location_if_missing(json_data["location"])
             last_updated = json_data["lastUpdated"]
             if data.last_updated_changed(location_id, last_updated):
-                print(f"{location_id}: Data updated.")
+                logging.info(f"{location_id}: Data updated.")
                 process_json_data(location_id, json_data)
                 add_weather_warnings(location_id, soup)
             else:
-                print(f"{location_id}: No data update.")
+                logging.info(f"{location_id}: No data update.")
         stop = timer()
         time.sleep(max(0, download_settings.refresh_seconds - (stop - start)))
 
